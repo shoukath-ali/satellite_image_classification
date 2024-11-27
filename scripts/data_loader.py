@@ -1,7 +1,8 @@
 import os
 from PIL import Image
 import torch
-from torchvision import transforms
+import numpy as np
+from torchvision import transforms, models
 from torch.utils.data import Dataset, DataLoader
 
 class SatelliteDataset(Dataset):
@@ -39,6 +40,53 @@ class SatelliteDataset(Dataset):
 
         return img, label
     
+def extract_features(data_dir, img_size=(224, 224)):
+    """
+    Extract features from images using a pre-trained ResNet model.
+    Args:
+        data_dir (str): Path to the dataset directory.
+        img_size (tuple): Image resizing dimensions.
+    Returns:
+        features (np.array): Extracted feature vectors.
+        labels (np.array): Corresponding labels.
+    """
+    import torch
+    from torchvision import transforms
+    from torchvision.datasets import ImageFolder
+    from torch.utils.data import DataLoader
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    transform = transforms.Compose([
+        transforms.Resize(img_size),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+    ])
+
+    dataset = ImageFolder(data_dir, transform=transform)
+    data_loader = DataLoader(dataset, batch_size=32, shuffle=False)
+
+    feature_extractor = models.resnet18(weights=models.ResNet18_Weights.DEFAULT)
+    feature_extractor = torch.nn.Sequential(*list(feature_extractor.children())[:-1])  # Remove the final layer
+    feature_extractor.to(device)
+    feature_extractor.eval()
+
+    features = []
+    labels = []
+
+    with torch.no_grad():
+        for images, lbls in data_loader:
+            images = images.to(device)
+            outputs = feature_extractor(images)
+            outputs = outputs.view(outputs.size(0), -1)  # Flatten features
+            features.append(outputs.cpu().numpy())
+            labels.extend(lbls.numpy())
+
+    features = np.concatenate(features, axis=0)
+    labels = np.array(labels)
+
+    return features, labels
+ 
 def get_data_loaders(data_dir, batch_size=32, img_size=(224, 224)):
     """
     Prepare PyTorch DataLoaders for training and testing.

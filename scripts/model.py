@@ -12,7 +12,7 @@ def get_model(model_name, num_classes):
     if model_name == "resnet":
         model = models.resnet18(pretrained=True)
         model.fc = nn.Linear(model.fc.in_features, num_classes)
-    if model_name == "custom":
+    elif model_name == "custom":
         model = CustomCNN(num_classes)
     else:
         raise ValueError(f"Model {model_name} not supported.")
