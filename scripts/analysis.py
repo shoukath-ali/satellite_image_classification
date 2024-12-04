@@ -13,7 +13,7 @@ from data_loader import SatelliteDataset
 import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.metrics import accuracy_score
-
+import time
 
 # =====================
 # Feature Extraction for Traditional ML Models
@@ -183,58 +183,60 @@ def train_model(data_dir, model_name, num_epochs=10, batch_size=32, learning_rat
     print(f"Model {model_name} saved to {model_save_path}")
 
 
-def plot_model_performance(models, X_test, y_test, deep_learning_results):
+
+def save_bar_plot(accuracies, times, save_path):
     """
-    Visualize accuracy and training time per epoch for ML and deep learning models.
+    Save a bar plot comparing model accuracies and average time/epoch.
     Args:
-        models (dict): Dictionary of trained ML models.
-        X_test (np.array): Test feature set for ML models.
-        y_test (np.array): Test labels for ML models.
-        deep_learning_results (list of dict): Accuracy and training time for DL models.
+        accuracies (dict): Dictionary of model accuracies.
+        times (dict): Dictionary of average time/epoch or total training time.
+        save_path (str): Path to save the plot.
     """
-    # Evaluate traditional ML models
-    ml_accuracies = {}
-    ml_times = {}
-    for name, model_data in models.items():
-        model, train_time = model_data
-        y_pred = model.predict(X_test)
-        accuracy = accuracy_score(y_test, y_pred)
-        ml_accuracies[name] = accuracy
-        ml_times[name] = train_time
-
-    # Extract deep learning results
-    dl_accuracies = {result['name']: result['accuracy'] for result in deep_learning_results}
-    dl_times = {result['name']: result['avg_time_per_epoch'] for result in deep_learning_results}
-
-    # Combine results
-    combined_accuracies = {**ml_accuracies, **dl_accuracies}
-    combined_times = {**ml_times, **dl_times}
-
-    # Visualization
     fig, ax1 = plt.subplots(figsize=(12, 6))
 
     color = 'tab:blue'
     ax1.set_xlabel("Models")
     ax1.set_ylabel("Accuracy", color=color)
-    ax1.bar(combined_accuracies.keys(), combined_accuracies.values(), color=color, alpha=0.6, label="Accuracy")
+    ax1.bar(accuracies.keys(), accuracies.values(), color=color, alpha=0.6, label="Accuracy")
     ax1.tick_params(axis='y', labelcolor=color)
 
     ax2 = ax1.twinx()  # Create a twin y-axis for time
     color = 'tab:orange'
     ax2.set_ylabel("Average Time/Epoch (seconds)", color=color)
-    ax2.plot(combined_times.keys(), combined_times.values(), color=color, marker='o', label="Time/Epoch")
+    ax2.plot(times.keys(), times.values(), color=color, marker='o', label="Time/Epoch")
     ax2.tick_params(axis='y', labelcolor=color)
 
     plt.title("Model Performance: Accuracy vs. Training Time/Epoch")
-    plt.savefig("analysis")
     fig.tight_layout()
-    plt.show()
+    plt.savefig(save_path)
+    plt.close()
+    print(f"Bar plot saved to {save_path}")
+
+def save_accuracy_vs_epoch_plot(results, save_path):
+    """
+    Save an accuracy vs. epoch plot for deep learning models.
+    Args:
+        results (list of dict): List containing accuracy over epochs for each model.
+        save_path (str): Path to save the plot.
+    """
+    plt.figure(figsize=(10, 6))
+    for result in results:
+        plt.plot(result['epochs'], result['accuracies'], marker='o', label=result['name'])
+
+    plt.xlabel("Epochs")
+    plt.ylabel("Accuracy")
+    plt.title("Accuracy vs. Epochs for Deep Learning Models")
+    plt.legend()
+    plt.grid(True)
+    plt.savefig(save_path)
+    plt.close()
+    print(f"Accuracy vs. Epoch plot saved to {save_path}")
 
 def train_model_with_time(data_dir, model_name, num_epochs=10, batch_size=32, learning_rate=0.001, num_classes=4):
     """
-    Train the specified model and measure training time per epoch.
+    Train the specified model and measure training time per epoch and accuracy progression.
     Returns:
-        dict: Dictionary containing model name, accuracy, and avg training time/epoch.
+        dict: Dictionary containing model name, accuracy, avg training time/epoch, and accuracy over epochs.
     """
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Training {model_name} on {device}")
@@ -258,6 +260,9 @@ def train_model_with_time(data_dir, model_name, num_epochs=10, batch_size=32, le
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
 
     total_time = 0.0
+    epoch_accuracies = []
+    epoch_list = []
+
     for epoch in range(num_epochs):
         model.train()
         epoch_start = time.time()
@@ -277,26 +282,33 @@ def train_model_with_time(data_dir, model_name, num_epochs=10, batch_size=32, le
         epoch_time = time.time() - epoch_start
         total_time += epoch_time
 
-        print(f"{model_name} - Epoch [{epoch+1}/{num_epochs}], Loss: {running_loss/len(train_loader):.4f}, Time: {epoch_time:.2f}s")
+        # Evaluate accuracy at this epoch
+        model.eval()
+        correct = 0
+        total = 0
+        with torch.no_grad():
+            for images, labels in test_loader:
+                images, labels = images.to(device), labels.to(device)
+                outputs = model(images)
+                _, predicted = torch.max(outputs.data, 1)
+                total += labels.size(0)
+                correct += (predicted == labels).sum().item()
+
+        accuracy = correct / total
+        epoch_accuracies.append(accuracy)
+        epoch_list.append(epoch + 1)
+
+        print(f"{model_name} - Epoch [{epoch+1}/{num_epochs}], Loss: {running_loss/len(train_loader):.4f}, Time: {epoch_time:.2f}s, Accuracy: {accuracy:.4f}")
 
     avg_time_per_epoch = total_time / num_epochs
 
-    # Evaluate model
-    model.eval()
-    correct = 0
-    total = 0
-    with torch.no_grad():
-        for images, labels in test_loader:
-            images, labels = images.to(device), labels.to(device)
-            outputs = model(images)
-            _, predicted = torch.max(outputs.data, 1)
-            total += labels.size(0)
-            correct += (predicted == labels).sum().item()
-
-    accuracy = correct / total
-    print(f"{model_name} - Test Accuracy: {accuracy:.4f}, Avg Time/Epoch: {avg_time_per_epoch:.2f}s")
-
-    return {"name": model_name, "accuracy": accuracy, "avg_time_per_epoch": avg_time_per_epoch}
+    return {
+        "name": model_name,
+        "accuracy": accuracy,
+        "avg_time_per_epoch": avg_time_per_epoch,
+        "epochs": epoch_list,
+        "accuracies": epoch_accuracies
+    }
 
 if __name__ == "__main__":
     data_dir = "../data"
@@ -328,5 +340,11 @@ if __name__ == "__main__":
         dl_result = train_model_with_time(data_dir, model_name)
         deep_learning_results.append(dl_result)
 
-    print("Visualizing model performance...")
-    plot_model_performance(ml_models, X_test, y_test, deep_learning_results)
+    print("Saving visualizations...")
+    combined_accuracies = {name: model[0].score(X_test, y_test) for name, model in ml_models.items()}
+    combined_accuracies.update({dl['name']: dl['accuracy'] for dl in deep_learning_results})
+    combined_times = {name: model[1] for name, model in ml_models.items()}
+    combined_times.update({dl['name']: dl['avg_time_per_epoch'] for dl in deep_learning_results})
+
+    save_bar_plot(combined_accuracies, combined_times, "model_performance_bar_plot.png")
+    save_accuracy_vs_epoch_plot(deep_learning_results, "dl_accuracy_vs_epoch_plot.png")
