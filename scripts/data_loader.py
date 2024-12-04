@@ -114,7 +114,7 @@ def get_data_loaders(data_dir, batch_size=32, img_size=(224, 224)):
     return train_loader, test_loader
 
 if __name__ == "__main__":
-    data_dir = "data/satellite_images"
+    data_dir = "../data"
     train_loader, test_loader = get_data_loaders(data_dir)
 
     print(f"Training batches: {len(train_loader)}")
